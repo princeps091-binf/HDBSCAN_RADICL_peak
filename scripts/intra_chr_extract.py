@@ -2,8 +2,6 @@
 import pandas as pd
 import altair as alt
 import bioframe as bf
-from joblib import Parallel, delayed
-import multiprocessing
 import numpy as np
 
 #%%
@@ -12,7 +10,7 @@ black_list_file = "/home/vipink/Documents/FANTOM6/data/annotation/hg38-blacklist
 annotation_file = "/home/vipink/Documents/FANTOM6/data/annotation/FANTOM_CAT.lv3_robust.bed"
 
 #%%
-chromo = "chr22"
+chromo = "chr19"
 
 iter_csv = pd.read_csv(RADICL_read_file, iterator=True, chunksize=100000,sep='\t',header=None)
 
@@ -53,35 +51,25 @@ transcript_read_inter = bf.overlap(transcript_annotation_df.loc[:,['chrom','star
                                        suffixes=('_1','_2'))
 
 #%%
-def check_nascent(df_,name):
-    return(df_
-     .assign(start_d=lambda df_: np.abs(df_.start_2 - df_.start_1),
-         end_d=lambda df_: np.abs(df_.end_2 - df_.end_1))
-     .assign(max_d= lambda df_: df_.loc[:,['start_d','end_d']].max(axis=1))
-     .groupby('RNA_ID_2')
-     .agg(top_d=('max_d',max),
-          end=('DNA_end_2',lambda x: x.iloc[0]),
-          start=('DNA_start_2',lambda x: x.iloc[0]),
-          RNA_start=('start_2',lambda x: x.iloc[0]))
-     .reset_index()
-     .assign(start_d=lambda x:np.abs(x.RNA_start - x.start)<x.top_d,
-             end_d =lambda x: np.abs(x.RNA_start - x.end)<x.top_d)
-     .assign(nascent = lambda x: sum([x.start_d,x.end_d])>0)
-     .reset_index()
-     .loc[:,['RNA_ID_2','nascent']])
-
-def applyParallel(dfGrouped, func):
-    retLst = Parallel(n_jobs=multiprocessing.cpu_count())(delayed(func)(group,name) for name, group in dfGrouped)
-    return pd.concat(retLst)
-
-# %%
-nascent_check_df = applyParallel(transcript_read_inter .groupby("RNA_ID_2"), check_nascent)
-#%%
-nascent_check_df.query('~nascent').RNA_ID_2
+nascent_check_df = (transcript_read_inter
+ .groupby(["chrom_1","RNA_ID_2","start_2","end_2","DNA_start_2","DNA_end_2"])
+ .agg(edge_start=('start_1','min'),
+      edge_end=('end_1','max'))
+ .reset_index()
+ .assign(max_d=lambda df_:np.abs(df_.start_2 - df_.edge_end),
+         max_u=lambda df_:np.abs(df_.end_2 - df_.edge_start))
+ .assign(max_e=lambda df_:df_[['max_d','max_u']].max(axis=1))
+ .assign(max_r_d=lambda df_:np.abs(df_.start_2 - df_.DNA_end_2),
+         max_r_u=lambda df_:np.abs(df_.end_2 - df_.DNA_start_2))
+ .assign(max_r_e=lambda df_:df_[['max_r_d','max_r_u']].max(axis=1))
+ .assign(nascent=lambda df_:df_.max_r_e < df_.max_e)
+)
 # %%
 alt.data_transformers.disable_max_rows()
 
-(alt.Chart(df.query("RNA_ID in @nascent_check_df.query('nascent').RNA_ID_2"))
+(alt.Chart(df
+           .query("RNA_ID in @nascent_check_df.query('~nascent').RNA_ID_2")
+           .query("strand == '+'"))
 .mark_point(
     size=0.1,
     filled=True,
