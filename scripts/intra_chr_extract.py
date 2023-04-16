@@ -3,6 +3,7 @@ import pandas as pd
 import altair as alt
 import bioframe as bf
 import numpy as np
+import hdbscan
 
 #%%
 RADICL_read_file = "/home/vipink/Documents/FANTOM6/data/RADICL_data/Neuron/replicate1/raw/RADICL_intra.bed"
@@ -74,6 +75,44 @@ alt.data_transformers.disable_max_rows()
     size=0.1,
     filled=True,
     opacity=0.5
+)
+.encode(
+    alt.X("start:Q"),
+    alt.Y('DNA_start:Q')))
+
+# %%
+plus_strand_space_df = (df
+                        .query("RNA_ID in @nascent_check_df.query('~nascent').RNA_ID_2")
+                        .query("strand == '+'")
+                        .loc[:,['start','DNA_start']]
+                        )
+# %%
+clusterer = hdbscan.HDBSCAN(min_cluster_size=2,cluster_selection_epsilon=25,metric='chebyshev')
+clusterer.fit(plus_strand_space_df)
+
+# %%
+clusterer.labels_.max()
+#%%
+(plus_strand_space_df
+           .assign(proba=-np.sqrt(clusterer.probabilities_),
+                   out=clusterer.labels_ < 0,
+                   cl=clusterer.labels_)
+           .query('~out')
+           .groupby('cl')
+           .agg(size=('cl','count'))
+           .reset_index()
+           .sort_values('size'))
+
+# %%
+alt.data_transformers.disable_max_rows()
+
+(alt.Chart(plus_strand_space_df
+           .assign(proba=-np.sqrt(clusterer.probabilities_),
+                   out=clusterer.labels_ < 0)
+           .query('~out'))
+.mark_point(
+    filled=True,
+    size=0.1
 )
 .encode(
     alt.X("start:Q"),
