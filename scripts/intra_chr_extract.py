@@ -11,7 +11,7 @@ black_list_file = "/home/vipink/Documents/FANTOM6/data/annotation/hg38-blacklist
 annotation_file = "/home/vipink/Documents/FANTOM6/data/annotation/FANTOM_CAT.lv3_robust.bed"
 
 #%%
-chromo = "chr19"
+chromo = "chr16"
 
 iter_csv = pd.read_csv(RADICL_read_file, iterator=True, chunksize=100000,sep='\t',header=None)
 
@@ -69,8 +69,8 @@ nascent_check_df = (transcript_read_inter
 alt.data_transformers.disable_max_rows()
 
 (alt.Chart(df
-           .query("RNA_ID in @nascent_check_df.query('~nascent').RNA_ID_2")
-           .query("strand == '+'"))
+           .query("RNA_ID in @nascent_check_df.query('~nascent').RNA_ID_2"))
+#           .query("strand == '+'"))
 .mark_point(
     size=0.1,
     filled=True,
@@ -79,43 +79,14 @@ alt.data_transformers.disable_max_rows()
 .encode(
     alt.X("start:Q"),
     alt.Y('DNA_start:Q')))
-
-# %%
-plus_strand_space_df = (df
-                        .query("RNA_ID in @nascent_check_df.query('~nascent').RNA_ID_2")
-                        .query("strand == '+'")
-                        .loc[:,['start','DNA_start']]
-                        )
-# %%
-clusterer = hdbscan.HDBSCAN(min_cluster_size=2,cluster_selection_epsilon=25,metric='chebyshev')
-clusterer.fit(plus_strand_space_df)
-
-# %%
-clusterer.labels_.max()
 #%%
-(plus_strand_space_df
-           .assign(proba=-np.sqrt(clusterer.probabilities_),
-                   out=clusterer.labels_ < 0,
-                   cl=clusterer.labels_)
-           .query('~out')
-           .groupby('cl')
-           .agg(size=('cl','count'))
-           .reset_index()
-           .sort_values('size'))
+(df
+.query("RNA_ID in @nascent_check_df.query('~nascent').RNA_ID_2")
+.to_csv(f"./../data/processed/{chromo}_filter_df.csv",
+        sep="\t",
+        header=True,index=False)
+)
 
 # %%
-alt.data_transformers.disable_max_rows()
-
-(alt.Chart(plus_strand_space_df
-           .assign(proba=-np.sqrt(clusterer.probabilities_),
-                   out=clusterer.labels_ < 0)
-           .query('~out'))
-.mark_point(
-    filled=True,
-    size=0.1
-)
-.encode(
-    alt.X("start:Q"),
-    alt.Y('DNA_start:Q')))
 
 # %%
