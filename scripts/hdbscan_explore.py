@@ -5,6 +5,8 @@ import bioframe as bf
 import numpy as np
 import hdbscan
 import networkx as nx
+from sklearn.neighbors import NearestNeighbors
+alt.data_transformers.disable_max_rows()
 
 #%%
 RADICL_file="/home/vipink/Documents/FANTOM6/HDBSCAN_RADICL_peak/data/processed/chr16_filter_df.csv"

@@ -3,7 +3,6 @@ import pandas as pd
 import altair as alt
 import bioframe as bf
 import numpy as np
-import hdbscan
 
 #%%
 RADICL_read_file = "/home/vipink/Documents/FANTOM6/data/RADICL_data/Neuron/replicate1/raw/RADICL_intra.bed"
@@ -11,7 +10,7 @@ black_list_file = "/home/vipink/Documents/FANTOM6/data/annotation/hg38-blacklist
 annotation_file = "/home/vipink/Documents/FANTOM6/data/annotation/FANTOM_CAT.lv3_robust.bed"
 
 #%%
-chromo = "chr16"
+chromo = "chr22"
 
 iter_csv = pd.read_csv(RADICL_read_file, iterator=True, chunksize=100000,sep='\t',header=None)
 
@@ -86,7 +85,3 @@ alt.data_transformers.disable_max_rows()
         sep="\t",
         header=True,index=False)
 )
-
-# %%
-
-# %%
