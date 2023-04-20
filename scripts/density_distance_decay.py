@@ -52,19 +52,20 @@ read_neighbour_df = (read_neighbour_df
                              log_d=lambda df_:np.log10(df_.mod_d))
 )
 # %%
-X = read_neighbour_df.log_d.to_numpy()
-X = sm.add_constant(X)
+x_spline = read_neighbour_df[['log_d']]
 y = read_neighbour_df.log_neigh.to_numpy()
 
-# %%
-mod = sm.OLS(y, X)
-results = mod.fit()
-print(results.summary())
+bs = sm.gam.BSplines(x_spline, df=5, degree=3)
 
 # %%
-influence = results.get_influence()
-res_standard = influence.resid_studentized_internal
-
+chr_gam = sm.GLMGam(y,smoother=bs)
+chr_gam_res = chr_gam.fit()
 # %%
-ppval = t.sf(res_standard,results.df_resid)
+print(chr_gam_res.summary())
+# %%
+chr_gam_res.plot_partial(0, cpr=False)
+# %%
+gam_infl = chr_gam_res.get_influence()
+# %%
+gam_infl.resid_studentized
 # %%
