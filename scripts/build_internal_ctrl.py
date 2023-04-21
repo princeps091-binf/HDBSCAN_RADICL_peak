@@ -1,6 +1,7 @@
 #%%
 import pandas as pd
 import bioframe as bf
+import altair as alt
 alt.data_transformers.disable_max_rows()
 #%%
 RADICL_file="/home/vipink/Documents/FANTOM6/HDBSCAN_RADICL_peak/data/processed/chr16_filter_df.csv"
@@ -39,11 +40,13 @@ def produce_bg_read_set(radicl_df):
     .sort_values('start')
     .loc[:,['chrom','start','end']])
 # %%
-radicl_df = (dedup_radicl_df.loc[:,['chrom','DNA_start','DNA_end']]
+DNA_df = (dedup_radicl_df.loc[:,['chrom','DNA_start','DNA_end']]
     .rename(columns={'DNA_start':'start',
                     'DNA_end':'end'})
     .sort_values('start'))
-bg_read_df = produce_bg_read_set(radicl_df)
-#%%
-bf.closest(bg_read_df).sort_values('distance').agg(med=('distance','median'))
+bg_read_df = produce_bg_read_set(DNA_df)
+# %%
+(bg_read_df
+ .to_csv("./../data/processed/chr16_bg.bed"
+         ,sep='\t',index=False,header=True))
 # %%
