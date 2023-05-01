@@ -5,10 +5,9 @@ import numpy as np
 import hdbscan
 import networkx as nx
 import statsmodels.api as sm
-from joblib import Parallel, delayed
 import bioframe as bf
+import multiprocessing
 alt.data_transformers.disable_max_rows()
-
 #%%
 chromo = 'chr16'
 RADICL_read_file = f"/home/vipink/Documents/FANTOM6/HDBSCAN_RADICL_peak/data/processed/{chromo}_filter_df.csv"
@@ -31,27 +30,7 @@ clusterer.fit(DNA_df.loc[:,['start']])
 #%%
 g = clusterer.condensed_tree_.to_networkx()
 egde_list = clusterer.condensed_tree_.to_pandas()
-#%%
-alt.Chart(egde_list
-          .assign(lw=lambda df_:np.log10(1/df_.lambda_val))).transform_window(
-    ecdf="cume_dist()",
-    sort=[{"field": "lw"}],
-).mark_line(
-    interpolate="step-after"
-).encode(
-    x="lw:Q",
-    y="ecdf:Q"
-)
-
-
-
-#%%
-#Set distance thresh
-clusterer.single_linkage_tree_.get_clusters(10000, min_cluster_size=2)
-np.median(np.unique(clusterer.single_linkage_tree_.get_clusters(10000, min_cluster_size=2)[(clusterer.single_linkage_tree_.get_clusters(10000, min_cluster_size=2) > 0)],return_counts=True)[1])
-
-
-
+     
 # %%
 # get all cluster
 hd_clusters = np.array(list(g.nodes))[np.array(list(g.nodes))>(DNA_df.shape[0]-1)]
@@ -99,41 +78,109 @@ tmp_pval = list(map(lambda i: check_rate_sign(hdb_cluster_summary_df,i), range(0
 # %%
 hdb_cluster_summary_df = hdb_cluster_summary_df.assign(pval=tmp_pval)
 hdb_cluster_summary_df = (hdb_cluster_summary_df
-                          .assign(LFC=lambda df_:np.log10(df_.rate/(1/np.mean(bf.closest(DNA_df).distance)))))
+                          .assign(LFC=lambda df_:np.log10(df_.rate/(DNA_df.shape[0]/DNA_df.end.max()))))
 
-egde_list.assign(out=lambda df_:np.isfinite(df_.lambda_val)).query('~out')
-
+hdb_cluster_summary_df = (hdb_cluster_summary_df
+ .assign(fdr=lambda df_:sm.stats.multipletests(df_.pval,method='fdr_bh')[1]))
+# %%
+cl_depth_df = (pd.DataFrame.from_dict(nx.shortest_path_length(g, source=DNA_df.shape[0]),orient='index')
+ .reset_index()
+ .query('index > @DNA_df.shape[0] -1')
+ .reset_index(drop=True)
+ .rename(columns={
+    'index':'cl',
+    0:'level'
+ }))
+# %%
+hdb_cluster_summary_df = hdb_cluster_summary_df.merge(cl_depth_df,how='inner')
 #%%
-alt.Chart(hdb_cluster_summary_df
-          .assign(lw=lambda df_:np.log10(df_.width))).transform_window(
-    ecdf="cume_dist()",
-    sort=[{"field": "lw"}],
-).mark_line(
-    interpolate="step-after"
-).encode(
-    x="lw:Q",
-    y="ecdf:Q"
-)
-#%%
+zero_bump = hdb_cluster_summary_df.pval.to_numpy()[hdb_cluster_summary_df.pval.to_numpy()> 0].min()/2
 
 (alt.Chart(hdb_cluster_summary_df
-          .assign(lp=lambda df_:-np.log10(df_.pval))
-          )
+            .assign(lw=lambda df_:np.log10(df_.width),
+                    lr=lambda df_:np.log10(df_.read_count),
+                    lpval=lambda df_:-np.log10(df_.pval + zero_bump),
+                    qp=lambda df_:pd.qcut(-np.log10(df_.fdr + zero_bump),10,labels=pd.qcut(-np.log10(df_.fdr + zero_bump),10,retbins=True)[1][0:-1])
+                    )
+            .assign(clp=lambda df_:df_.lpval.where(df_.lpval <= 50,50))
+            )
 .transform_window(
     ecdf="cume_dist()",
-    sort=[{"field": "level"}],
+    sort=[{"field": "clp"}],
 ).mark_line(
     interpolate="step-after"
 ).encode(
-    x="level:Q",
+    x="clp:Q",
     y="ecdf:Q"
 ))
 #%%
-size_thresh = 1000
-tmp_hdb_cluster_summary_df = (hdb_cluster_summary_df
-                              .query('width <= @size_thresh'))
+(alt.Chart(hdb_cluster_summary_df
+ .assign(lpval=lambda df_:-np.log10(df_.pval + zero_bump))
+ .sort_values('pval')
+ .assign(clp= lambda df_:df_.lpval.cumsum()/df_.lpval.sum(),
+         perc_rank=np.array(list(range(0,hdb_cluster_summary_df.shape[0])))/hdb_cluster_summary_df.shape[0],
+         rank = np.array(list(range(0,hdb_cluster_summary_df.shape[0]))))
+ )
+ .mark_line(
+    interpolate="step-after"
+).encode(
+    x="rank:Q",
+    y="clp:Q"
+)
+)
+#%%
+bar = alt.Chart(hdb_cluster_summary_df
+                .sort_values('pval')
+                .assign(
+                        perc_rank=np.array(list(range(0,hdb_cluster_summary_df.shape[0])))
+                )
+                .iloc[0:1000,:]
+#                .query('start > 70000000')
+#                .query('end < 70500000')
+                ).mark_errorbar().encode(
+    alt.X("end:Q",scale=alt.Scale(zero=False),title="coord(bp)"),
+    alt.X2("start:Q"),
+    alt.Y("level:O"),
+    alt.Color("LFC:Q",scale=alt.Scale(scheme='plasma',reverse=False))
+)
 
-[nx.ancestors(g,i) for i in tmp_hdb_cluster_summary_df.cl]
+bar
+#%%
+zero_bump = hdb_cluster_summary_df.pval.to_numpy()[hdb_cluster_summary_df.pval.to_numpy()> 0].min()/2
+
+(alt.Chart(hdb_cluster_summary_df
+            .query('LFC > 0')
+            .assign(lw=lambda df_:np.log10(df_.width),
+                    lr=lambda df_:np.log10(df_.read_count),
+                    lpval=lambda df_:-np.log10(df_.pval + zero_bump),
+                    qp=lambda df_:pd.qcut(-np.log10(df_.fdr + zero_bump),10,labels=pd.qcut(-np.log10(df_.fdr + zero_bump),10,retbins=True)[1][0:-1]))
+            )
+.mark_point(
+     filled=True
+)
+.encode(
+    alt.X("LFC:Q"),
+    alt.Y('lw:Q'),
+    alt.Color('qp:Q',scale = alt.Scale(scheme='viridis'),sort='ascending')
+    ))
+
+#%%
+(alt.Chart(hdb_cluster_summary_df
+            .assign(lw=lambda df_:np.log10(df_.width),
+                    lr=lambda df_:np.log10(df_.read_count),
+                    lpval=lambda df_:-np.log10(df_.fdr + zero_bump))
+            )
+.mark_point(
+     filled=True,
+     opacity=0.2
+)
+.encode(
+    alt.X("LFC:Q"),
+    alt.Y('lpval:Q'),
+    alt.Color('lw',scale = alt.Scale(scheme='viridis'))
+    ))
+
+
 # %%
 read_ancestry_df = pd.DataFrame({'ancestry':np.array([len(nx.ancestors(g,i)) for i in range(0,DNA_df.shape[0])])})
 # %%
@@ -144,26 +191,6 @@ read_ancestry_df = pd.DataFrame({'ancestry':np.array([len(nx.ancestors(g,i)) for
     alt.X('ancestry:Q'),
     alt.Y('count()'),
 ))
-# %%
-read_ancestry_df = pd.DataFrame({'ancestry':np.array([nx.ancestors(g,i) for i in range(0,DNA_df.shape[0])])})
-#%%
-def get_ancestry_stat(df_,g,i):
-    read_ancestor = nx.ancestors(g,i)
-    return df_.query('cl in @read_ancestor').pval.min()
-#%%
-ancestry_size_df = pd.DataFrame({'ancestry':np.hstack([get_ancestry_stat(hdb_cluster_summary_df,g,i) for i in range(0,123)])})
-
-# %%
-cl_depth_df = (pd.DataFrame.from_dict(nx.shortest_path_length(g, source=158032),orient='index')
- .reset_index()
- .query('index > @DNA_df.shape[0] -1')
- .reset_index(drop=True)
- .rename(columns={
-    'index':'cl',
-    0:'level'
- }))
-# %%
-hdb_cluster_summary_df = hdb_cluster_summary_df.merge(cl_depth_df,how='inner')
 # %%
 (alt.Chart((hdb_cluster_summary_df
             .assign(lp=lambda df_:-np.log10(df_.pval + 1),
@@ -179,21 +206,4 @@ hdb_cluster_summary_df = hdb_cluster_summary_df.merge(cl_depth_df,how='inner')
 .encode(
     alt.X("lw:Q"),
     alt.Y('score:Q')))
-# %%
-(alt.Chart(hdb_cluster_summary_df
-          .query('LFC > 0')
-          .assign(lw=lambda df_:np.log10(df_.width),
-                  lp=lambda df_:-np.log10(df_.pval))
-          .query('lp<50'))
-.transform_density(
-    'lw',         # Specify the column containing the data
-    as_=['agg_width', 'density']   # Name the new columns
-).mark_area(
-    opacity=0.3
-).encode(
-    x='agg_width:Q', 
-    y='density:Q'))
-
-# %%
-sm.stats.test_p
 # %%
