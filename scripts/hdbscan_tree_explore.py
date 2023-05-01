@@ -134,9 +134,11 @@ bar = alt.Chart(hdb_cluster_summary_df
                 .assign(
                         perc_rank=np.array(list(range(0,hdb_cluster_summary_df.shape[0])))
                 )
-                .iloc[0:1000,:]
-#                .query('start > 70000000')
-#                .query('end < 70500000')
+                .iloc[0:900000,:]
+                .query('LFC > 0')
+                .query('start > 50000000')
+                .query('end < 50500000')
+                .query('width < 25000')
                 ).mark_errorbar().encode(
     alt.X("end:Q",scale=alt.Scale(zero=False),title="coord(bp)"),
     alt.X2("start:Q"),
@@ -145,25 +147,6 @@ bar = alt.Chart(hdb_cluster_summary_df
 )
 
 bar
-#%%
-zero_bump = hdb_cluster_summary_df.pval.to_numpy()[hdb_cluster_summary_df.pval.to_numpy()> 0].min()/2
-
-(alt.Chart(hdb_cluster_summary_df
-            .query('LFC > 0')
-            .assign(lw=lambda df_:np.log10(df_.width),
-                    lr=lambda df_:np.log10(df_.read_count),
-                    lpval=lambda df_:-np.log10(df_.pval + zero_bump),
-                    qp=lambda df_:pd.qcut(-np.log10(df_.fdr + zero_bump),10,labels=pd.qcut(-np.log10(df_.fdr + zero_bump),10,retbins=True)[1][0:-1]))
-            )
-.mark_point(
-     filled=True
-)
-.encode(
-    alt.X("LFC:Q"),
-    alt.Y('lw:Q'),
-    alt.Color('qp:Q',scale = alt.Scale(scheme='viridis'),sort='ascending')
-    ))
-
 #%%
 (alt.Chart(hdb_cluster_summary_df
             .assign(lw=lambda df_:np.log10(df_.width),
