@@ -69,3 +69,37 @@ gam_infl = chr_gam_res.get_influence()
 # %%
 gam_infl.resid_studentized
 # %%
+chart = (alt.Chart(plus_strand_space_df
+           .assign(zscore=gam_infl.resid_studentized)
+           .query('zscore>1.5')
+           .assign(qp=lambda df_:pd.qcut(df_.zscore,5,labels=pd.qcut(df_.zscore,5,retbins=True)[1][0:-1])
+))
+.mark_point(
+    opacity=1,
+    size=10,
+    filled=True)
+.encode(
+    x="RNA_start:Q",
+    y='DNA_start:Q',
+    color=alt.Color('qp:Q',scale = alt.Scale(scheme='viridis'))
+))
+
+chart
+# %%
+chart = (alt.Chart(plus_strand_space_df
+           .assign(zscore=gam_infl.resid_studentized)
+#           .query('zscore>2')
+           .assign(qp=lambda df_:pd.qcut(df_.zscore,5,labels=pd.qcut(df_.zscore,5,retbins=True)[1][0:-1])
+))
+.mark_point(
+    opacity=0.1,
+    size=1,
+    filled=True)
+.encode(
+    x="RNA_start:Q",
+    y='DNA_start:Q'
+))
+
+chart
+
+# %%

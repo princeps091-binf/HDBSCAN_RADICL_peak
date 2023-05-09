@@ -10,7 +10,7 @@ black_list_file = "/home/vipink/Documents/FANTOM6/data/annotation/hg38-blacklist
 annotation_file = "/home/vipink/Documents/FANTOM6/data/annotation/FANTOM_CAT.lv3_robust.bed"
 
 #%%
-chromo = "chr22"
+chromo = "chr1"
 
 iter_csv = pd.read_csv(RADICL_read_file, iterator=True, chunksize=100000,sep='\t',header=None)
 
@@ -68,7 +68,7 @@ nascent_check_df = (transcript_read_inter
 alt.data_transformers.disable_max_rows()
 
 (alt.Chart(df
-           .query("RNA_ID in @nascent_check_df.query('~nascent').RNA_ID_2"))
+           .query("RNA_ID in @nascent_check_df.query('nascent').RNA_ID_2"))
 #           .query("strand == '+'"))
 .mark_point(
     size=0.1,

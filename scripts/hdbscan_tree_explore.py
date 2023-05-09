@@ -6,7 +6,7 @@ import hdbscan
 import networkx as nx
 import statsmodels.api as sm
 import bioframe as bf
-import multiprocessing
+from multiprocessing import Pool
 alt.data_transformers.disable_max_rows()
 #%%
 chromo = 'chr16'
@@ -93,16 +93,77 @@ cl_depth_df = (pd.DataFrame.from_dict(nx.shortest_path_length(g, source=DNA_df.s
  }))
 # %%
 hdb_cluster_summary_df = hdb_cluster_summary_df.merge(cl_depth_df,how='inner')
+
+#%%
+hdb_cluster_summary_df = (hdb_cluster_summary_df.merge((egde_list
+ .rename(columns={'child':"cl"}).loc[:,['cl','lambda_val','child_size']]),how='left'))
+
+#%%
+hdb_cluster_summary_df.to_csv("./../data/processed/chr16_hdb_cl_summary.csv",
+                              sep="\t",
+                              index=False,
+                              header=True)
+#%%
+local_cluster_df = (hdb_cluster_summary_df
+ .query('width < 10000')
+ .query('LFC > 0')
+ .sort_values('fdr'))
+
+#%%
+def make_cluster_thresh(thresh):
+    return (bf.cluster(local_cluster_df
+            .query('fdr <= @thresh'))
+            .groupby(['cluster','cluster_start','cluster_end'])
+            .agg(ncl=('cluster','count'))
+            .reset_index()
+            .assign(width=lambda df_:df_.cluster_end-df_.cluster_start,
+                    fdr=thresh).shape[0])
+
+def make_cluster_thresh_w(thresh):
+    return (bf.cluster(local_cluster_df
+            .query('fdr <= @thresh'))
+            .groupby(['cluster','cluster_start','cluster_end'])
+            .agg(ncl=('cluster','count'))
+            .reset_index()
+            .assign(width=lambda df_:df_.cluster_end-df_.cluster_start,
+                    fdr=thresh)
+            .agg(scl=('width','sum')).width.to_numpy())
+
+pval_thresh = local_cluster_df.fdr.unique()
+#%%
+# Define the number of processes to use
+num_processes = 4
+#%%
+# Execute the map function in parallel
+with Pool(num_processes) as pool:
+    results_w = pool.map(make_cluster_thresh_w, pval_thresh)
+    results_n = pool.map(make_cluster_thresh, pval_thresh)
+#%%
+res_df = pd.DataFrame({
+    'fdr':pval_thresh,
+    'ncl':np.hstack(results_w),
+    'wcl':np.hstack(results_n)
+})
+(alt.Chart(res_df
+           .assign(lf=lambda df_:np.log10(df_.fdr),
+                   lncl=lambda df_:np.log10(df_.ncl),
+                   lw=lambda df_:np.log10(df_.wcl))
+           .assign(clp=lambda df_:df_.lf.where(df_.lf >= -50,-50)))
+.mark_line().encode(
+    x="clp:Q",
+    y="lncl:Q"
+))
 #%%
 zero_bump = hdb_cluster_summary_df.pval.to_numpy()[hdb_cluster_summary_df.pval.to_numpy()> 0].min()/2
 
 (alt.Chart(hdb_cluster_summary_df
+            .query('width < 10000')
             .assign(lw=lambda df_:np.log10(df_.width),
                     lr=lambda df_:np.log10(df_.read_count),
                     lpval=lambda df_:-np.log10(df_.pval + zero_bump),
                     qp=lambda df_:pd.qcut(-np.log10(df_.fdr + zero_bump),10,labels=pd.qcut(-np.log10(df_.fdr + zero_bump),10,retbins=True)[1][0:-1])
                     )
-            .assign(clp=lambda df_:df_.lpval.where(df_.lpval <= 50,50))
+            .assign(clp=lambda df_:df_.lpval.where(df_.lpval <= 20,20))
             )
 .transform_window(
     ecdf="cume_dist()",
@@ -136,9 +197,10 @@ bar = alt.Chart(hdb_cluster_summary_df
                 )
                 .iloc[0:900000,:]
                 .query('LFC > 0')
-                .query('start > 50000000')
+                .query('start > 50200000')
                 .query('end < 50500000')
-                .query('width < 25000')
+                .query('width < 10000')
+                .query('pval < 10**(-10)')
                 ).mark_errorbar().encode(
     alt.X("end:Q",scale=alt.Scale(zero=False),title="coord(bp)"),
     alt.X2("start:Q"),
@@ -163,9 +225,33 @@ bar
     alt.Color('lw',scale = alt.Scale(scheme='viridis'))
     ))
 
+#%%
+zero_bump = hdb_cluster_summary_df.pval.to_numpy()[hdb_cluster_summary_df.pval.to_numpy()> 0].min()/2
+
+(alt.Chart(hdb_cluster_summary_df
+            .assign(lw=lambda df_:np.log10(df_.width),
+                    lr=lambda df_:np.log10(1/df_.lambda_val),
+                    lpval=lambda df_:-np.log10(df_.fdr + zero_bump))
+            .assign(qp=lambda df_:pd.qcut(-np.log10(df_.fdr + zero_bump),10,labels=pd.qcut(-np.log10(df_.fdr + zero_bump),10,retbins=True)[1][0:-1]))
+            )
+.mark_point(
+     filled=True,
+     opacity=1
+)
+.encode(
+    alt.X("lw:Q"),
+    alt.Y('LFC:Q'),
+    alt.Color('qp:O',scale = alt.Scale(scheme='blueorange'))
+    ))
 
 # %%
-read_ancestry_df = pd.DataFrame({'ancestry':np.array([len(nx.ancestors(g,i)) for i in range(0,DNA_df.shape[0])])})
+read_ancestry_df = pd.DataFrame({'ancestry':([np.sort(np.array(list(nx.ancestors(g,i)))) for i in range(0,DNA_df.shape[0])])})
+#%%
+(read_ancestry_df
+ .assign(ancestor_n=lambda df_:df_.ancestry.map(len))
+ .sort_values('ancestor_n'))
+
+
 # %%
 
 (alt.Chart(read_ancestry_df)
