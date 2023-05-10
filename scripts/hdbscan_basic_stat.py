@@ -52,8 +52,6 @@ lambda_val = np.unique(egde_list.lambda_val.sort_values(ascending=True))[::-1]
 tot_read_count = DNA_df.shape[0]
 #%%
 with multiprocessing.Pool(processes=4) as pool:
-        
-        # Using map_async method to perform square operation on all numbers parallely
         result = pool.map(lambda_cluster_size ,lambda_val)        
 #%%
 lambda_noise_df = pd.DataFrame({'distance':(1/np.array(lambda_val)),'prop':result})
@@ -122,7 +120,6 @@ def cluster_df(i):
 thresh_cl_df = cluster_df(distance_thresh)
 # %%
 lambda_peak = 1/lambda_cl_df.sort_values('cl',ascending=False).distance.iloc[0]
-egde_list.query('lambda_val >= @lambda_peak').query('child < @DNA_df.shape[0]')
 # %%
 cl_set = egde_list.query('lambda_val >= @lambda_peak').query('child > @DNA_df.shape[0]').child.drop_duplicates().to_numpy()
 # %%
@@ -134,11 +131,16 @@ seed_ancestor = np.array([len(list(set(nx.ancestors(g,i)) & set(cl_set))) for i 
 seed_children = np.array([len(list(set(nx.descendants(g,i)) & set(cl_set))) for i in cl_set])
 
 # %%
-pd.DataFrame({
+cl_tree_context_df = pd.DataFrame({
       'cl':cl_set,
       'ancestor_count':seed_ancestor,
       'children_count':seed_children
-}).query('ancestor_count <1').query('children_count < 1').sort_values('children_count')
+})
+#%%
+(cl_tree_context_df
+ .query('ancestor_count < 1')
+ .query('children_count > 0'))
+
 # %%
-sum(np.array(list(nx.descendants(g,222484))) < DNA_df.shape[0])
+sum(np.array(list(nx.descendants(g,222437))) < DNA_df.shape[0])
 # %%
