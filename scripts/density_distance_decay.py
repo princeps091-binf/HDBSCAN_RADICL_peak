@@ -69,35 +69,50 @@ gam_infl = chr_gam_res.get_influence()
 # %%
 gam_infl.resid_studentized
 # %%
-chart = (alt.Chart(plus_strand_space_df
+chart = (alt.Chart(read_neighbour_df
            .assign(zscore=gam_infl.resid_studentized)
-           .query('zscore>1.5')
+           .query('zscore< -1')
            .assign(qp=lambda df_:pd.qcut(df_.zscore,5,labels=pd.qcut(df_.zscore,5,retbins=True)[1][0:-1])
+))
+.mark_point(
+    opacity=1,
+    size=1,
+    filled=True)
+.encode(
+    x="RNA_start:Q",
+    y='DNA_start:Q',
+    color=alt.Color('qp:Q',scale = alt.Scale(scheme='viridis',reverse=True,domainMid=0))
+))
+
+chart
+# %%
+read_neighbour_df = (read_neighbour_df
+           .assign(zscore=gam_infl.resid_studentized)
+           .assign(pred=lambda df_:chr_gam_res.get_prediction(exog_smooth = df_.log_d).predicted_mean,
+                   lower = lambda df_:chr_gam_res.get_prediction(exog_smooth = df_.log_d).conf_int()[:,0],
+                   upper=lambda df_:chr_gam_res.get_prediction(exog_smooth = df_.log_d).conf_int()[:,1])
+)
+# %%
+alt.Chart(read_neighbour_df).transform_density(
+    'zscore',
+    as_=['zscore', 'density'],
+).mark_area().encode(
+    x="zscore:Q",
+    y='density:Q',
+)
+# %%
+chart = (alt.Chart(read_neighbour_df
+           .assign(zscore=gam_infl.resid_studentized)
+           .assign(qp=lambda df_:pd.qcut(np.abs(df_.zscore),20,labels=pd.qcut(np.abs(df_.zscore),20,retbins=True)[1][0:-1])
 ))
 .mark_point(
     opacity=1,
     size=10,
     filled=True)
 .encode(
-    x="RNA_start:Q",
-    y='DNA_start:Q',
-    color=alt.Color('qp:Q',scale = alt.Scale(scheme='viridis'))
-))
-
-chart
-# %%
-chart = (alt.Chart(plus_strand_space_df
-           .assign(zscore=gam_infl.resid_studentized)
-#           .query('zscore>2')
-           .assign(qp=lambda df_:pd.qcut(df_.zscore,5,labels=pd.qcut(df_.zscore,5,retbins=True)[1][0:-1])
-))
-.mark_point(
-    opacity=0.1,
-    size=1,
-    filled=True)
-.encode(
-    x="RNA_start:Q",
-    y='DNA_start:Q'
+    x="log_d:Q",
+    y='log_neigh:Q',
+    color=alt.Color('qp:Q',scale = alt.Scale(scheme='magma',reverse=True))
 ))
 
 chart
