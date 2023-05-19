@@ -2,6 +2,7 @@
 import pandas as pd
 import altair as alt
 import numpy as np
+import bioframe as bf
 from sklearn.neighbors import NearestNeighbors
 import statsmodels.api as sm
 from scipy.stats import norm
@@ -121,4 +122,43 @@ alt.Chart(cl_zscore_significance_df).transform_window(
     y="ecdf:Q"
 )
 
+# %%
+lambda_val = np.unique(egde_list.lambda_val.sort_values(ascending=True))[::-1][1:-1]
+
+def cluster_nr(i):
+    tmp_cl = (clusterer.single_linkage_tree_
+                        .get_clusters(1/i,min_cluster_size=2))
+    return sum(np.unique(tmp_cl) >= 0)
+ 
+# %%
+with multiprocessing.Pool(processes=5) as pool:
+        # Using map_async method to perform square operation on all numbers parallely
+        result_cln = pool.map(cluster_nr ,lambda_val)        
+lambda_cl_df = pd.DataFrame({'distance':(1/np.array(lambda_val)),
+                             'cl':result_cln})
+# %%
+lambda_cl_df
+# %%
+lambda_peak = 1/lambda_cl_df.sort_values('cl',ascending=False).distance.iloc[0]
+
+# %%
+cl_set = egde_list.query('lambda_val >= @lambda_peak').query('child > @dedup_radicl_df.shape[0]').child.drop_duplicates().to_numpy()
+
+# %%
+cl_zscore_significance_df.query('cl in @cl_set')
+# %%
+
+# %%
+seed_ancestor = np.array([len(list(set(nx.ancestors(g,i)) & set(cl_set))) for i in cl_set])
+seed_children = np.array([len(list(set(nx.descendants(g,i)) & set(cl_set))) for i in cl_set])
+cl_tree_context_df = pd.DataFrame({
+      'cl':cl_set,
+      'ancestor_count':seed_ancestor,
+      'children_count':seed_children
+})
+
+# %%
+cl_zscore_significance_df = cl_zscore_significance_df.merge(cl_tree_context_df,how='inner')
+#%%
+cl_zscore_significance_df.query('ancestor_count == 0')
 # %%
