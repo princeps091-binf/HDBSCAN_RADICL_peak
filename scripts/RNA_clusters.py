@@ -12,7 +12,7 @@ import multiprocessing
 alt.data_transformers.disable_max_rows()
 
 #%%
-chromo = 'chr19'
+chromo = 'chr22'
 RNA_radicl = f'/home/vipink/Documents/FANTOM6/data/RADICL_data/IPSC/replicate1/raw/RNA/chr/RADICL_iPSC_RNA_{chromo}.bed'
 #%%
 radicl_df = pd.read_csv(RNA_radicl,delimiter="\t",header=None)
@@ -43,16 +43,30 @@ extend_radicl_df = pd.concat([(radicl_df
 #%%
 RNA_cluster_df = (bf.cluster(extend_radicl_df,on=['strand'])
  .groupby('cluster')
- .agg(size=('cluster','count'),
+ .agg(chrom=('chrom','first'),
       start=('cluster_start','min'),
       end=('cluster_end','max'),
-      strand=('strand','first'))
+      strand=('strand','first'),
+      size=('cluster','count'))
  .reset_index()
  .assign(width=lambda df_:df_.end - df_.start)
  .sort_values('width'))
+
 # %%
 alt.Chart(RNA_cluster_df
-          .assign(lw=lambda df_:np.log10(df_.width))
+          .assign(lw=lambda df_:np.log10(df_.loc[:,'size']))
+          ).transform_window(
+    ecdf="cume_dist()",
+    sort=[{"field": "lw"}],
+).mark_line(
+    interpolate="step-after"
+).encode(
+    x="lw:Q",
+    y="ecdf:Q"
+)
+#%%
+alt.Chart(bf.closest(RNA_cluster_df.query("strand == '+'"))
+          .assign(lw=lambda df_:np.log10(df_.loc[:,'distance']))
           ).transform_window(
     ecdf="cume_dist()",
     sort=[{"field": "lw"}],

@@ -162,3 +162,56 @@ cl_zscore_significance_df = cl_zscore_significance_df.merge(cl_tree_context_df,h
 #%%
 cl_zscore_significance_df.query('ancestor_count == 0')
 # %%
+def get_cluster_read_count(i):
+      return sum(np.array(list(nx.descendants(g,i))) < dedup_radicl_df.shape[0])
+def get_cluster_read_content(i):
+    tmp_read_idx = np.array(list(nx.descendants(g,i)))[np.array(list(nx.descendants(g,i))) < dedup_radicl_df.shape[0]]
+    return dedup_radicl_df.iloc[tmp_read_idx,:]
+def get_cluster_start(i):
+      return get_cluster_read_content(i).DNA_start.min()
+def get_cluster_end(i):
+      return get_cluster_read_content(i).DNA_end.max()
+
+
+# %%
+tmp_rc = np.array([get_cluster_read_count(i) for i in cl_zscore_significance_df.cl.to_numpy()])
+tmp_start = np.array([get_cluster_start(i) for i in cl_zscore_significance_df.cl.to_numpy()])
+tmp_end = np.array([get_cluster_end(i) for i in cl_zscore_significance_df.cl.to_numpy()])
+cl_zscore_significance_df = (cl_zscore_significance_df
+                             .assign(read_count = tmp_rc,
+                                     start= tmp_start,
+                                     end = tmp_end))
+
+# %%
+chromo_rate = dedup_radicl_df.shape[0]/(dedup_radicl_df.DNA_end.max() - dedup_radicl_df.DNA_start.min())
+cl_zscore_significance_df = (cl_zscore_significance_df
+                             .assign(width = lambda df_:df_.end-df_.start)
+                             .assign(read_rate = lambda df_:df_.read_count/df_.width)
+                             .assign(FC = lambda df_:df_.read_rate/chromo_rate))
+# %%
+cl_zscore_significance_df = (cl_zscore_significance_df
+ .merge(egde_list.loc[:,['child','lambda_val']],left_on='cl',right_on='child'))
+# %%
+(alt.Chart(cl_zscore_significance_df
+           .assign(lf=lambda df_:np.log10(df_.lambda_val),
+                   lp=lambda df_:np.log10(df_.pval))
+            .assign(clp = lambda df_:df_.lp.clip(lower=-5))
+           )
+.mark_point(
+    filled=True,
+    size=1
+)
+.encode(
+    alt.X("lf:Q"),
+    alt.Y('clp:Q')))
+
+# %%
+alt.Chart(cl_zscore_significance_df
+          .query('ancestor_count > 0')
+          .query('children_count == 0')
+).mark_bar().encode(
+    alt.X("pval:Q", bin=True),
+    y='count()',
+)
+
+# %%
